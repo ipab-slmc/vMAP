@@ -3,12 +3,58 @@ import loss
 from vmap import *
 import utils
 import open3d
+import matplotlib.pyplot as plt
 import dataset
 import vis
 from functorch import vmap
 import argparse
 from cfg import Config
 import shutil
+
+import rospy
+from std_msgs.msg import Header
+from sensor_msgs.msg import PointCloud2, PointField
+import sensor_msgs.point_cloud2 as pc2
+
+# Bit operations
+BIT_MOVE_16 = int(2**16)
+BIT_MOVE_8 = int(2**8)
+
+# The data structure of each point in ros PointCloud2: 16 bits = x + y + z + rgb
+FIELDS_XYZ = [
+    PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+    PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+    PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+]
+FIELDS_XYZRGB = FIELDS_XYZ + \
+    [PointField(name='rgb', offset=12, datatype=PointField.UINT32, count=1)]
+
+
+# Convert the datatype of point cloud from Open3D to ROS PointCloud2 (XYZRGB only)
+# https://github.com/felixchenfy/open3d_ros_pointcloud_conversion
+def convertCloudFromOpen3dToRos(open3d_cloud, frame_id="odom"):
+    # Set "header"
+    header = Header()
+    header.stamp = rospy.Time.now()
+    header.frame_id = frame_id
+
+    # Set "fields" and "cloud_data"
+    points=np.asarray(open3d_cloud.points)
+    if not open3d_cloud.colors: # XYZ only
+        fields=FIELDS_XYZ
+        cloud_data=points
+    else: # XYZ + RGB
+        fields=FIELDS_XYZRGB
+        # -- Change rgb color from "three float" to "one 24-byte int"
+        # 0x00FFFFFF is white, 0x00000000 is black.
+        colors = np.floor(np.asarray(open3d_cloud.colors)*255).astype(int) # nx3 matrix
+        colors = colors[:,0] * BIT_MOVE_16 +colors[:,1] * BIT_MOVE_8 + colors[:,2]
+        colors = colors.reshape(colors.shape[0],1)
+        cloud_data = np.concatenate((points, colors), axis=1, dtype=object)
+        # cloud_data=np.c_[points, colors, dtype='f4, f4, f4, i4']
+    
+    # create ros_cloud
+    return pc2.create_cloud(header, fields, cloud_data)
 
 if __name__ == "__main__":
     #############################################
@@ -38,7 +84,7 @@ if __name__ == "__main__":
     n_sample_per_step_bg = cfg.n_per_optim_bg
 
     # param for vis
-    vis3d = open3d.visualization.VisualizerWithEditing()
+    vis3d = open3d.visualization.Visualizer()
     vis3d.create_window(window_name="3D mesh vis",
                         width=cfg.W,
                         height=cfg.H,
@@ -46,7 +92,6 @@ if __name__ == "__main__":
     view_ctl = vis3d.get_view_control()
     view_ctl.set_constant_z_far(10.)
 
-    vis3d.run()
     # set camera
     cam_info = cameraInfo(cfg)
     intrinsic_open3d = open3d.camera.PinholeCameraIntrinsic(
@@ -67,27 +112,19 @@ if __name__ == "__main__":
         scaler = torch.cuda.amp.GradScaler()  # amp https://pytorch.org/blog/accelerating-training-on-nvidia-gpus-with-pytorch-automatic-mixed-precision/
     optimiser = torch.optim.AdamW([torch.autograd.Variable(torch.tensor(0))], lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
+    rospy.init_node('imap')
+    reconstruction_pub = rospy.Publisher('reconstruction', PointCloud2, queue_size=10)
+    input_pointcloud_pub = rospy.Publisher('input_pointcloud', PointCloud2, queue_size=10)
+
+    print("breakpoint test")
+
     #############################################
     # init data stream
-    if not cfg.live_mode:
-        # load dataset
-        dataloader = dataset.init_loader(cfg)
-        dataloader_iterator = iter(dataloader)
-        dataset_len = len(dataloader)
-    else:
-        dataset_len = 1000000
-        # # init ros node
-        # torch.multiprocessing.set_start_method('spawn')  # spawn
-        # import ros_nodes
-        # track_to_map_Buffer = torch.multiprocessing.Queue(maxsize=5)
-        # # track_to_vis_T_WC = torch.multiprocessing.Queue(maxsize=1)
-        # kfs_que = torch.multiprocessing.Queue(maxsize=5)  # to store one more buffer
-        # track_p = torch.multiprocessing.Process(target=ros_nodes.Tracking,
-        #                                              args=(
-        #                                              (cfg), (track_to_map_Buffer), (None),
-        #                                              (kfs_que), (True),))
-        # track_p.start()
 
+    # load dataset
+    dataloader = dataset.init_loader(cfg)
+    dataloader_iterator = iter(dataloader)
+    dataset_len = len(dataloader)
 
     # init vmap
     fc_models, pe_models = [], []
@@ -95,13 +132,13 @@ if __name__ == "__main__":
 
     for frame_id in tqdm(range(dataset_len)):
         print("*********************************************")
+        if rospy.is_shutdown():
+            print('rospy.is_shutdown()')
+            break
         # get new frame data
         with performance_measure(f"getting next data"):
-            if not cfg.live_mode:
-                # get data from dataloader
-                sample = next(dataloader_iterator)
-            else:
-                pass
+            sample = next(dataloader_iterator)
+
 
         if sample is not None:  # new frame
             last_frame_time = time.time()
@@ -110,33 +147,26 @@ if __name__ == "__main__":
                 depth = sample["depth"].to(cfg.data_device)
                 twc = sample["T"].to(cfg.data_device)
                 bbox_dict = sample["bbox_dict"]
+                
                 if "frame_id" in sample.keys():
                     live_frame_id = sample["frame_id"]
                 else:
                     live_frame_id = frame_id
-                if not cfg.live_mode:
-                    inst = sample["obj"].to(cfg.data_device)
-                    obj_ids = torch.unique(inst)
-                else:
-                    inst_data_dict = sample["obj"]
-                    obj_ids = inst_data_dict.keys()
+
+                inst = sample["obj"].to(cfg.data_device)
+                obj_ids = torch.unique(inst)
+
                 # append new frame info to objs in current view
                 for obj_id in obj_ids:
                     if obj_id == -1:    # unsured area
                         continue
                     obj_id = int(obj_id)
                     # convert inst mask to state
-                    if not cfg.live_mode:
-                        state = torch.zeros_like(inst, dtype=torch.uint8, device=cfg.data_device)
-                        state[inst == obj_id] = 1
-                        state[inst == -1] = 2
-                    else:
-                        inst_mask = inst_data_dict[obj_id].permute(1,0)
-                        label_list = torch.unique(inst_mask).tolist()
-                        state = torch.zeros_like(inst_mask, dtype=torch.uint8, device=cfg.data_device)
-                        state[inst_mask == obj_id] = 1
-                        state[inst_mask == -1] = 2
+                    state = torch.zeros_like(inst, dtype=torch.uint8, device=cfg.data_device)
+                    state[inst == obj_id] = 1
+                    state[inst == -1] = 2
                     bbox = bbox_dict[obj_id]
+
                     if obj_id in vis_dict.keys():
                         scene_obj = vis_dict[obj_id]
                         scene_obj.append_keyframe(rgb, depth, state, bbox, twc, live_frame_id)
@@ -145,43 +175,14 @@ if __name__ == "__main__":
                             print("models full!!!! current num ", len(obj_dict.keys()))
                             continue
                         print("init new obj ", obj_id)
-                        if cfg.do_bg and obj_id == 0:   # todo param
-                            scene_bg = sceneObject(cfg, obj_id, rgb, depth, state, bbox, twc, live_frame_id)
-                            # scene_bg.init_obj_center(intrinsic_open3d, depth, state, twc)
-                            optimiser.add_param_group({"params": scene_bg.trainer.fc_occ_map.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
-                            optimiser.add_param_group({"params": scene_bg.trainer.pe.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
-                            vis_dict.update({obj_id: scene_bg})
-                        else:
-                            scene_obj = sceneObject(cfg, obj_id, rgb, depth, state, bbox, twc, live_frame_id)
-                            # scene_obj.init_obj_center(intrinsic_open3d, depth, state, twc)
-                            obj_dict.update({obj_id: scene_obj})
-                            vis_dict.update({obj_id: scene_obj})
-                            # params = [scene_obj.trainer.fc_occ_map.parameters(), scene_obj.trainer.pe.parameters()]
-                            optimiser.add_param_group({"params": scene_obj.trainer.fc_occ_map.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
-                            optimiser.add_param_group({"params": scene_obj.trainer.pe.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
-                            if cfg.training_strategy == "vmap":
-                                update_vmap_model = True
-                                fc_models.append(obj_dict[obj_id].trainer.fc_occ_map)
-                                pe_models.append(obj_dict[obj_id].trainer.pe)
 
-                        # ###################################
-                        # # measure trainable params in total
-                        # total_params = 0
-                        # obj_k = obj_dict[obj_id]
-                        # for p in obj_k.trainer.fc_occ_map.parameters():
-                        #     if p.requires_grad:
-                        #         total_params += p.numel()
-                        # for p in obj_k.trainer.pe.parameters():
-                        #     if p.requires_grad:
-                        #         total_params += p.numel()
-                        # print("total param ", total_params)
+                        scene_obj = sceneObject(cfg, obj_id, rgb, depth, state, bbox, twc, live_frame_id)
+                        # scene_obj.init_obj_center(intrinsic_open3d, depth, state, twc)
+                        obj_dict.update({obj_id: scene_obj})
+                        vis_dict.update({obj_id: scene_obj})
 
-        # dynamically add vmap
-        with performance_measure(f"add vmap"):
-            if cfg.training_strategy == "vmap" and update_vmap_model == True:
-                fc_model, fc_param, fc_buffer = utils.update_vmap(fc_models, optimiser)
-                pe_model, pe_param, pe_buffer = utils.update_vmap(pe_models, optimiser)
-                update_vmap_model = False
+                        optimiser.add_param_group({"params": scene_obj.trainer.fc_occ_map.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
+                        optimiser.add_param_group({"params": scene_obj.trainer.pe.parameters(), "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay})
 
 
         ##################################################################
@@ -194,18 +195,6 @@ if __name__ == "__main__":
         Batch_N_sampled_z = []
 
         with performance_measure(f"Sampling over {len(obj_dict.keys())} objects,"):
-            if cfg.do_bg and scene_bg is not None:
-                gt_rgb, gt_depth, valid_depth_mask, obj_mask, input_pcs, sampled_z \
-                    = scene_bg.get_training_samples(cfg.n_iter_per_frame * cfg.win_size_bg, cfg.n_samples_per_frame_bg,
-                                                    cam_info.rays_dir_cache)
-                bg_gt_depth = gt_depth.reshape([gt_depth.shape[0] * gt_depth.shape[1]])
-                bg_gt_rgb = gt_rgb.reshape([gt_rgb.shape[0] * gt_rgb.shape[1], gt_rgb.shape[2]])
-                bg_valid_depth_mask = valid_depth_mask
-                bg_obj_mask = obj_mask
-                bg_input_pcs = input_pcs.reshape(
-                    [input_pcs.shape[0] * input_pcs.shape[1], input_pcs.shape[2], input_pcs.shape[3]])
-                bg_sampled_z = sampled_z.reshape([sampled_z.shape[0] * sampled_z.shape[1], sampled_z.shape[2]])
-
             for obj_id, obj_k in obj_dict.items():
                 gt_rgb, gt_depth, valid_depth_mask, obj_mask, input_pcs, sampled_z \
                     = obj_k.get_training_samples(cfg.n_iter_per_frame * cfg.win_size, cfg.n_samples_per_frame,
@@ -218,25 +207,18 @@ if __name__ == "__main__":
                 Batch_N_input_pcs.append(input_pcs.reshape([input_pcs.shape[0] * input_pcs.shape[1], input_pcs.shape[2], input_pcs.shape[3]]))
                 Batch_N_sampled_z.append(sampled_z.reshape([sampled_z.shape[0] * sampled_z.shape[1], sampled_z.shape[2]]))
 
-                # # vis sampled points in open3D
-                # # sampled pcs
-                # pc = open3d.geometry.PointCloud()
-                # pc.points = open3d.utility.Vector3dVector(input_pcs.cpu().numpy().reshape(-1,3))
-                # open3d.visualization.draw_geometries([pc])
+                # vis sampled points in open3D
                 # rgb_np = rgb.cpu().numpy().astype(np.uint8).transpose(1,0,2)
-                # # print("rgb ", rgb_np.shape)
-                # # print(rgb_np)
-                # # cv2.imshow("rgb", rgb_np)
-                # # cv2.waitKey(1)
                 # depth_np = depth.cpu().numpy().astype(np.float32).transpose(1,0)
                 # twc_np = twc.cpu().numpy()
                 # rgbd = open3d.geometry.RGBDImage.create_from_color_and_depth(
                 #     open3d.geometry.Image(rgb_np),
                 #     open3d.geometry.Image(depth_np),
-                #     depth_trunc=max_depth,
+                #     depth_trunc=100,
                 #     depth_scale=1,
                 #     convert_rgb_to_intensity=False,
                 # )
+
                 # T_CW = np.linalg.inv(twc_np)
                 # # input image pc
                 # input_pc = open3d.geometry.PointCloud.create_from_rgbd_image(
@@ -244,7 +226,11 @@ if __name__ == "__main__":
                 #     intrinsic=intrinsic_open3d,
                 #     extrinsic=T_CW)
                 # input_pc.points = open3d.utility.Vector3dVector(np.array(input_pc.points) - obj_k.obj_center.cpu().numpy())
-                # open3d.visualization.draw_geometries([pc, input_pc])
+
+                # ros_msg = convertCloudFromOpen3dToRos(input_pc, frame_id="map")
+                # ros_msg.header.stamp = rospy.Time.now()
+                # print("Publishing Input Data")
+                # input_pointcloud_pub.publish(ros_msg)
 
 
         ####################################################
@@ -276,27 +262,20 @@ if __name__ == "__main__":
                 batch_depth_mask = Batch_N_depth_mask[:, data_idx, ...]
                 batch_obj_mask = Batch_N_obj_mask[:, data_idx, ...]
                 batch_sampled_z = Batch_N_sampled_z[:, data_idx, ...]
-                if cfg.training_strategy == "forloop":
+                # if cfg.training_strategy == "forloop":
                     # for loop training
-                    batch_alpha = []
-                    batch_color = []
-                    for k, obj_id in enumerate(obj_dict.keys()):
-                        obj_k = obj_dict[obj_id]
-                        embedding_k = obj_k.trainer.pe(batch_input_pcs[k])
-                        alpha_k, color_k = obj_k.trainer.fc_occ_map(embedding_k)
-                        batch_alpha.append(alpha_k)
-                        batch_color.append(color_k)
+                batch_alpha = []
+                batch_color = []
+                for k, obj_id in enumerate(obj_dict.keys()):
+                    obj_k = obj_dict[obj_id]
+                    embedding_k = obj_k.trainer.pe(batch_input_pcs[k])
+                    alpha_k, color_k = obj_k.trainer.fc_occ_map(embedding_k)
+                    batch_alpha.append(alpha_k)
+                    batch_color.append(color_k)
 
-                    batch_alpha = torch.stack(batch_alpha)
-                    batch_color = torch.stack(batch_color)
-                elif cfg.training_strategy == "vmap":
-                    # batched training
-                    batch_embedding = vmap(pe_model)(pe_param, pe_buffer, batch_input_pcs)
-                    batch_alpha, batch_color = vmap(fc_model)(fc_param, fc_buffer, batch_embedding)
-                    # print("batch alpha ", batch_alpha.shape)
-                else:
-                    print("training strategy {} is not implemented ".format(cfg.training_strategy))
-                    exit(-1)
+                batch_alpha = torch.stack(batch_alpha)
+                batch_color = torch.stack(batch_color)
+
 
 
             # step loss
@@ -305,16 +284,6 @@ if __name__ == "__main__":
                                      batch_gt_depth.detach(), batch_gt_rgb.detach(),
                                      batch_obj_mask.detach(), batch_depth_mask.detach(),
                                      batch_sampled_z.detach())
-
-                if cfg.do_bg:
-                    bg_data_idx = slice(iter_step * n_sample_per_step_bg, (iter_step + 1) * n_sample_per_step_bg)
-                    bg_embedding = scene_bg.trainer.pe(bg_input_pcs[bg_data_idx, ...])
-                    bg_alpha, bg_color = scene_bg.trainer.fc_occ_map(bg_embedding)
-                    bg_loss, _ = loss.step_batch_loss(bg_alpha[None, ...], bg_color[None, ...],
-                                                     bg_gt_depth[None, bg_data_idx, ...].detach(), bg_gt_rgb[None, bg_data_idx].detach(),
-                                                     bg_obj_mask[None, bg_data_idx, ...].detach(), bg_valid_depth_mask[None, bg_data_idx, ...].detach(),
-                                                     bg_sampled_z[None, bg_data_idx, ...].detach())
-                    batch_loss += bg_loss
 
             # with performance_measure(f"Backward"):
                 if AMP:
@@ -327,16 +296,6 @@ if __name__ == "__main__":
                 optimiser.zero_grad(set_to_none=True)
                 # print("loss ", batch_loss.item())
 
-        # update each origin model params
-        # todo find a better way    # https://github.com/pytorch/functorch/issues/280
-        with performance_measure(f"updating vmap param"):
-            if cfg.training_strategy == "vmap":
-                with torch.no_grad():
-                    for model_id, (obj_id, obj_k) in enumerate(obj_dict.items()):
-                        for i, param in enumerate(obj_k.trainer.fc_occ_map.parameters()):
-                            param.copy_(fc_param[i][model_id])
-                        for i, param in enumerate(obj_k.trainer.pe.parameters()):
-                            param.copy_(pe_param[i][model_id])
 
 
         ####################################################################
@@ -362,20 +321,22 @@ if __name__ == "__main__":
 
                 # live vis
                 open3d_mesh = vis.trimesh_to_open3d(mesh)
-                vis3d.add_geometry(open3d_mesh)
-                vis3d.add_geometry(bound)
-                # update vis3d
-                vis3d.poll_events()
-                vis3d.update_renderer()
+                # vis3d.add_geometry(open3d_mesh)
+                # vis3d.add_geometry(bound)
+                # # update vis3d
+                # vis3d.poll_events()
+                # vis3d.update_renderer()
                 
+                pc = open3d.geometry.PointCloud()
+                pc.points = open3d_mesh.vertices
+                pc.colors = open3d_mesh.vertex_colors
 
-        if False:    # follow cam
-            cam = view_ctl.convert_to_pinhole_camera_parameters()
-            T_CW_np = np.linalg.inv(twc.cpu().numpy())
-            cam.extrinsic = T_CW_np
-            view_ctl.convert_from_pinhole_camera_parameters(cam)
-            vis3d.poll_events()
-            vis3d.update_renderer()
+                ros_msg = convertCloudFromOpen3dToRos(pc, frame_id="map")
+                ros_msg.header.stamp = rospy.Time.now()
+                print("Publishing Reconstruction Data")
+                reconstruction_pub.publish(ros_msg)
+
+
 
         with performance_measure("saving ckpt"):
             if save_ckpt and ((((frame_id % cfg.n_vis_iter) == 0 or frame_id == dataset_len - 1) or

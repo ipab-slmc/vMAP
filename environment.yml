@@ -82,7 +82,7 @@ dependencies:
     - dash-table==5.0.0
     - entrypoints==0.4
     - flask==2.2.2
-    - functorch==0.2.0
+    - functorch==0.2.1
     - fvcore==0.1.5.post20221122
     - h5py==3.7.0
     - imageio==2.22.4
