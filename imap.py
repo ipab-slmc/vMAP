@@ -106,10 +106,6 @@ if __name__ == "__main__":
     obj_dict = {}   # only objs
     vis_dict = {}   # including bg
 
-    # init for training
-    AMP = False
-    if AMP:
-        scaler = torch.cuda.amp.GradScaler()  # amp https://pytorch.org/blog/accelerating-training-on-nvidia-gpus-with-pytorch-automatic-mixed-precision/
     optimiser = torch.optim.AdamW([torch.autograd.Variable(torch.tensor(0))], lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
     rospy.init_node('imap')
@@ -126,9 +122,6 @@ if __name__ == "__main__":
     dataloader_iterator = iter(dataloader)
     dataset_len = len(dataloader)
 
-    # init vmap
-    fc_models, pe_models = [], []
-    scene_bg = None
 
     for frame_id in tqdm(range(dataset_len)):
         print("*********************************************")
@@ -286,15 +279,10 @@ if __name__ == "__main__":
                                      batch_sampled_z.detach())
 
             # with performance_measure(f"Backward"):
-                if AMP:
-                    scaler.scale(batch_loss).backward()
-                    scaler.step(optimiser)
-                    scaler.update()
-                else:
-                    batch_loss.backward()
-                    optimiser.step()
+
+                batch_loss.backward()
+                optimiser.step()
                 optimiser.zero_grad(set_to_none=True)
-                # print("loss ", batch_loss.item())
 
 
 

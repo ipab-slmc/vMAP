@@ -61,7 +61,7 @@
     },
     "vis": {
         "vis_device": "cuda:0",
-        "n_vis_iter": 5,
+        "n_vis_iter": 10,
         "n_bins_fine_vis": 10,
         "im_vis_reduce": 10,
         "grid_dim": 128,
