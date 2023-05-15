@@ -123,11 +123,8 @@ class sceneObject:
             self.n_bins_cam2surface = cfg.n_bins_cam2surface
             self.keyframe_step = cfg.keyframe_step
 
-        self.frames_height = rgb.shape[0]
-        self.frames_width = rgb.shape[1]
-
-        print(f"self.frames_width {self.frames_width}")
-        print(f"self.frames_height {self.frames_height}")
+        self.frames_width = rgb.shape[0]
+        self.frames_height = rgb.shape[1]
 
         self.min_bound = cfg.min_depth
         self.max_bound = cfg.max_depth
@@ -151,14 +148,12 @@ class sceneObject:
             device=self.data_device)  # [u low, u high, v low, v high]
         self.bbox[0] = bbox_2d
 
-        print(f"self.keyframe_buffer_size {self.keyframe_buffer_size}")
-
         # RGB + pixel state batch
         self.rgb_idx = slice(0, 3)
         self.state_idx = slice(3, 4)
         self.rgbs_batch = torch.empty(self.keyframe_buffer_size,
-                                      self.frames_height,
                                       self.frames_width,
+                                      self.frames_height,
                                       4,
                                       dtype=torch.uint8,
                                       device=self.data_device)
@@ -173,8 +168,8 @@ class sceneObject:
         self.rgbs_batch[0, :, :, self.state_idx] = mask[..., None]
 
         self.depth_batch = torch.empty(self.keyframe_buffer_size,
-                                       self.frames_height,
                                        self.frames_width,
+                                       self.frames_height,
                                        dtype=torch.float32,
                                        device=self.data_device)
 
@@ -372,6 +367,7 @@ class sceneObject:
         # Get sampled keyframe poses
         sampled_twc = self.t_wc_batch[keyframe_ids[:, 0], :, :]
 
+
         origins, dirs_w = origin_dirs_W(sampled_twc, sampled_ray_dirs)
 
         return self.sample_3d_points(sampled_rgbs, sampled_depth, origins, dirs_w)
@@ -522,10 +518,10 @@ class cameraInfo:
         idx_w = torch.arange(end=self.width, device=self.device)
         idx_h = torch.arange(end=self.height, device=self.device)
 
-        dirs = torch.ones((self.height, self.width, 3), device=self.device)
+        dirs = torch.ones((self.width, self.height, 3), device=self.device)
 
-        dirs[:, :, 0] = ((idx_h - self.cy) / self.fy)[:, None]
-        dirs[:, :, 1] = ((idx_w - self.cx) / self.fx)
+        dirs[:, :, 0] = ((idx_w - self.cx) / self.fx)[:, None]
+        dirs[:, :, 1] = ((idx_h - self.cy) / self.fy)
 
         if depth_type == "euclidean":
             raise Exception(

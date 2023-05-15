@@ -20,10 +20,10 @@
         "data_device": "cuda:0",
         "training_strategy": "forloop",
         "epochs": 1000000,
-        "scale": 1000.0
+        "scale": 1.0
     },
     "render": {
-        "depth_range": [0.0, 8.0],
+        "depth_range": [0.0, 4.0],
         "n_bins": 9,
         "n_bins_cam2surface": 5,
         "n_bins_cam2surface_bg": 5,

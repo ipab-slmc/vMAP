@@ -72,6 +72,8 @@ class IMapWrapper:
         # for p in processes:
         #         p.join()
 
+
+
     def getMesh(self):
         if self.mesh_available:
             return self.latest_mesh
@@ -81,7 +83,6 @@ class IMapWrapper:
     def meshing(self):
 
         if ((self.keyframe_counter % self.cfg.n_vis_iter) == 0 and (self.keyframe_counter >= 10)):
-            print("DOING MESHING")
             for obj_id, obj_k in self.vis_dict.items():
                 bound = obj_k.get_bound(self.intrinsic_open3d)
                 if bound is None:
@@ -107,7 +108,8 @@ class IMapWrapper:
                 # vis3d.poll_events()
                 # vis3d.update_renderer()
         else:
-            print(f"NOT MESHING{self.keyframe_counter} {self.cfg.n_vis_iter}")
+            # print(f"NOT MESHING{self.keyframe_counter} {self.cfg.n_vis_iter}")
+            pass
 
         # with performance_measure("saving ckpt"):
         #     if save_ckpt and ((((frame_id % cfg.n_vis_iter) == 0 or frame_id == dataset_len - 1) or

@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+import sys
+sys.path
+sys.path.append('/home/russell/git/vMAP/')
+
 # Python
 import argparse
 from scipy.spatial.transform import Rotation
@@ -13,6 +17,8 @@ import torch.multiprocessing as mp
 # ROS imports
 import rospy
 import tf2_ros
+from torchvision import transforms
+import image_transforms
 from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2, PointField, Image
 import sensor_msgs.point_cloud2 as pc2
@@ -105,6 +111,10 @@ class ROSImplicitMapper:
         rospy.Subscriber("/vicon/camera", PoseStamped, self.viconPoseCallback)
         self.latest_pose = PoseStamped()  # might need to improve this with mutex or queue
 
+        self.depth_transform = transforms.Compose(
+            [image_transforms.DepthScale(self.cfg.depth_scale),
+             image_transforms.DepthFilter(self.cfg.max_depth)])
+
     def publishPoseAsTf(self, pose_tensor):
         transform = TransformStamped()
 
@@ -156,8 +166,6 @@ class ROSImplicitMapper:
             try:
                 trans = self.tfBuffer.lookup_transform('odom', 'azure_kinect_rgb_camera_link', rospy.Time())
 
-                print("using Transform: ")
-                print(trans)
                 self.latest_pose.pose.position.x = trans.transform.translation.x
                 self.latest_pose.pose.position.y = trans.transform.translation.y
                 self.latest_pose.pose.position.z = trans.transform.translation.z
@@ -175,24 +183,24 @@ class ROSImplicitMapper:
 
             # convert images and pose to tensors
             rgb_open_cv = self.bridge.imgmsg_to_cv2(rgb_image, desired_encoding=rgb_image.encoding)
-            # if self.dataset == "ROS":
-                # rgb_open_cv = cv2.rotate(rgb_open_cv, cv2.ROTATE_90_CLOCKWISE)
+            if self.dataset == "ROS":
+                rgb_open_cv = cv2.rotate(rgb_open_cv, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
             rgb_image_tensor = torch.tensor(rgb_open_cv)
             if rgb_image_tensor.shape[2] == 4: # remove potential alpha channel
                 rgb_image_tensor = rgb_image_tensor[:,:,:3]
 
             depth_open_cv = self.bridge.imgmsg_to_cv2(depth_image, desired_encoding=depth_image.encoding)
-            # if self.dataset == "ROS":
-                # depth_open_cv = cv2.rotate(depth_open_cv, cv2.ROTATE_90_CLOCKWISE)
+            if self.dataset == "ROS":
+                depth_open_cv = cv2.rotate(depth_open_cv, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+            depth_open_cv = self.depth_transform(depth_open_cv)
             depth_image_tensor = torch.tensor(depth_open_cv)
 
             rotation_mat = Rotation.from_quat(
                 [self.latest_pose.pose.orientation.x, self.latest_pose.pose.orientation.y, self.latest_pose.
                  pose.orientation.z, self.latest_pose.pose.orientation.w])
             
-
-
             pose_tensor = torch.eye(4, 4)
             pose_tensor[0:3, 0:3] = torch.tensor(rotation_mat.as_matrix())
             pose_tensor[0, 3] = self.latest_pose.pose.position.x
