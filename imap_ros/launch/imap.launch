@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+
+
+
+    <node pkg="imap_ros" name="imap_ros" type="imap_ros.py" output="screen">
+        <remap from="/camera/image_raw" to="/azure_kinect/rgb/image_raw"/>
+        <remap from="/camera/depth/image_raw" to="/azure_kinect/depth_to_rgb/image_raw"/>
+    </node>
+
+</launch>

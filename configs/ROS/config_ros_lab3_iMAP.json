@@ -2,7 +2,7 @@
     "dataset": {
         "live": 0,
         "path": "/home/russell/Datasets/imap/demo_replica_room_0/room_0/imap/00",
-        "format": "Replica",
+        "format": "ROS",
         "keep_alive": 20
     },
     "optimizer": {
@@ -50,12 +50,12 @@
         "hidden_feature_size_bg": 128
     },
     "camera": {
-        "w": 1200,
-        "h": 680,
-        "fx": 600.0,
-        "fy": 600.0,
-        "cx": 599.5,
-        "cy": 339.5,
+        "w": 1280,
+        "h": 720,
+        "fx": 600,
+        "fy": 600,
+        "cx": 640,
+        "cy": 360,
         "mw": 0,
         "mh": 0
     },

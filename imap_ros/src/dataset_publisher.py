@@ -64,7 +64,7 @@ class DatasetPublisher:
 
                 pose_msg = PoseStamped()
                 pose_msg.header.stamp = rgb_msg.header.stamp
-                pose_msg.header.frame_id = "world"
+                pose_msg.header.frame_id = "odom"
                 # pose_msg.child_frame_id = "camera"
 
                 pose_rot = Rotation.from_matrix(twc[0:3,0:3])

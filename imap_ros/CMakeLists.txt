@@ -16,6 +16,6 @@ catkin_package(
     ${CATKIN_PACKAGE_DEPENDENCIES}
 )
 
-install(PROGRAMS src/imap_ros_node.py
+install(PROGRAMS src/imap_ros.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

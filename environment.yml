@@ -87,6 +87,7 @@ dependencies:
     - fvcore==0.1.5.post20221122
     - h5py==3.7.0
     - imageio==2.22.4
+    - imgviz==1.7.2
     - importlib-metadata==5.1.0
     - iopath==0.1.10
     - itsdangerous==2.1.2
@@ -98,6 +99,7 @@ dependencies:
     - plotly==5.11.0
     - pycocotools==2.0.6
     - pyquaternion==0.9.9
+    - rospkg==1.5.0
     - scikit-image==0.19.3
     - tenacity==8.1.0
     - termcolor==2.1.1

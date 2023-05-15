@@ -34,7 +34,15 @@ def origin_dirs_W(T_WC, dirs_C):
     assert T_WC.shape[1:] == (4, 4)
     assert dirs_C.shape[2] == 3
 
-    dirs_W = (T_WC[:, None, :3, :3] @ dirs_C[..., None]).squeeze()
+    print(T_WC.shape)
+    print(dirs_C.shape)
+    print(dirs_C[0])
+    print(T_WC[0])
+    
+
+    dirs_W = (T_WC[:, None, :3, :3] @ dirs_C[..., None])
+    print(dirs_W.shape)
+    dirs_W = dirs_W.squeeze()
 
     origins = T_WC[:, :3, -1]
 
@@ -115,8 +123,11 @@ class sceneObject:
             self.n_bins_cam2surface = cfg.n_bins_cam2surface
             self.keyframe_step = cfg.keyframe_step
 
-        self.frames_width = rgb.shape[0]
-        self.frames_height = rgb.shape[1]
+        self.frames_height = rgb.shape[0]
+        self.frames_width = rgb.shape[1]
+
+        print(f"self.frames_width {self.frames_width}")
+        print(f"self.frames_height {self.frames_height}")
 
         self.min_bound = cfg.min_depth
         self.max_bound = cfg.max_depth
@@ -140,12 +151,14 @@ class sceneObject:
             device=self.data_device)  # [u low, u high, v low, v high]
         self.bbox[0] = bbox_2d
 
+        print(f"self.keyframe_buffer_size {self.keyframe_buffer_size}")
+
         # RGB + pixel state batch
         self.rgb_idx = slice(0, 3)
         self.state_idx = slice(3, 4)
         self.rgbs_batch = torch.empty(self.keyframe_buffer_size,
-                                      self.frames_width,
                                       self.frames_height,
+                                      self.frames_width,
                                       4,
                                       dtype=torch.uint8,
                                       device=self.data_device)
@@ -160,8 +173,8 @@ class sceneObject:
         self.rgbs_batch[0, :, :, self.state_idx] = mask[..., None]
 
         self.depth_batch = torch.empty(self.keyframe_buffer_size,
-                                       self.frames_width,
                                        self.frames_height,
+                                       self.frames_width,
                                        dtype=torch.float32,
                                        device=self.data_device)
 
@@ -308,9 +321,9 @@ class sceneObject:
         bbox3d.color = (255,0,0)
         self.bbox3d = utils.bbox_open3d2bbox(bbox_o3d=bbox3d)
         # self.pc = []
-        print("obj ", self.obj_id)
-        print("bound ", bbox3d)
-        print("kf id dict ", self.kf_id_dict)
+        # print("obj ", self.obj_id)
+        # print("bound ", bbox3d)
+        # print("kf id dict ", self.kf_id_dict)
         # open3d.visualization.draw_geometries([bbox3d, pcs])
         return bbox3d
 
@@ -509,10 +522,10 @@ class cameraInfo:
         idx_w = torch.arange(end=self.width, device=self.device)
         idx_h = torch.arange(end=self.height, device=self.device)
 
-        dirs = torch.ones((self.width, self.height, 3), device=self.device)
+        dirs = torch.ones((self.height, self.width, 3), device=self.device)
 
-        dirs[:, :, 0] = ((idx_w - self.cx) / self.fx)[:, None]
-        dirs[:, :, 1] = ((idx_h - self.cy) / self.fy)
+        dirs[:, :, 0] = ((idx_h - self.cy) / self.fy)[:, None]
+        dirs[:, :, 1] = ((idx_w - self.cx) / self.fx)
 
         if depth_type == "euclidean":
             raise Exception(
