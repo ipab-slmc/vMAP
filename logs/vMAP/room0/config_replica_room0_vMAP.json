@@ -1,7 +1,7 @@
 {
     "dataset": {
         "live": 0,
-        "path": "/home/xin/data/Replica/vmap/room_0/imap/00",
+        "path": "/home/russell/Datasets/imap/demo_replica_room_0/room_0/imap/00",
         "format": "Replica",
         "keep_alive": 20
     },
@@ -13,9 +13,9 @@
         }
     },
     "trainer": {
-        "imap_mode": 1,
-        "do_bg": 0,
-        "n_models": 1,
+        "imap_mode": 0,
+        "do_bg": 1,
+        "n_models": 100,
         "train_device": "cuda:0",
         "data_device": "cuda:0",
         "training_strategy": "vmap",
@@ -25,15 +25,15 @@
     "render": {
         "depth_range": [0.0, 8.0],
         "n_bins": 9,
-        "n_bins_cam2surface": 5,
+        "n_bins_cam2surface": 1,
         "n_bins_cam2surface_bg": 5,
         "iters_per_frame": 20,
-        "n_per_optim": 4800,
+        "n_per_optim": 120,
         "n_per_optim_bg": 1200
     },
     "model": {
         "n_unidir_funcs": 5,
-        "obj_scale": 5.0,
+        "obj_scale": 2.0,
         "bg_scale": 5.0,
         "color_scaling": 5.0,
         "opacity_scaling": 10.0,
@@ -41,12 +41,12 @@
         "surface_eps": 0.1,
         "other_eps": 0.05,
         "keyframe_buffer_size": 20,
-        "keyframe_step": 50,
+        "keyframe_step": 25,
         "keyframe_step_bg": 50,
         "window_size": 5,
         "window_size_bg": 10,
         "hidden_layers_block": 1,
-        "hidden_feature_size": 256,
+        "hidden_feature_size": 32,
         "hidden_feature_size_bg": 128
     },
     "camera": {

@@ -1,7 +1,7 @@
 {
     "dataset": {
         "live": 0,
-        "path": "/home/xin/data/Replica/vmap/room_0/imap/00",
+        "path": "/home/russell/datasets/imap/demo_replica_room_0/room_0/imap/00",
         "format": "Replica",
         "keep_alive": 20
     },
@@ -18,7 +18,7 @@
         "n_models": 1,
         "train_device": "cuda:0",
         "data_device": "cuda:0",
-        "training_strategy": "vmap",
+        "training_strategy": "forloop",
         "epochs": 1000000,
         "scale": 1000.0
     },
@@ -61,10 +61,10 @@
     },
     "vis": {
         "vis_device": "cuda:0",
-        "n_vis_iter": 500,
+        "n_vis_iter": 5,
         "n_bins_fine_vis": 10,
         "im_vis_reduce": 10,
-        "grid_dim": 256,
+        "grid_dim": 128,
         "live_vis": 1,
         "live_voxel_size": 0.005
     }

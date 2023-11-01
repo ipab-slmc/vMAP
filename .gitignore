@@ -137,4 +137,6 @@ ScenePriors/train/examples/experiments/
 *.pkl
 *.idea
 
-logs/
+*.obj
+*.pth
+

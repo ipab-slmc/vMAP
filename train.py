@@ -38,7 +38,7 @@ if __name__ == "__main__":
     n_sample_per_step_bg = cfg.n_per_optim_bg
 
     # param for vis
-    vis3d = open3d.visualization.VisualizerWithEditing()
+    vis3d = open3d.visualization.Visualizer()
     vis3d.create_window(window_name="3D mesh vis",
                         width=cfg.W,
                         height=cfg.H,
@@ -46,7 +46,6 @@ if __name__ == "__main__":
     view_ctl = vis3d.get_view_control()
     view_ctl.set_constant_z_far(10.)
 
-    vis3d.run()
     # set camera
     cam_info = cameraInfo(cfg)
     intrinsic_open3d = open3d.camera.PinholeCameraIntrinsic(
@@ -367,7 +366,6 @@ if __name__ == "__main__":
                 # update vis3d
                 vis3d.poll_events()
                 vis3d.update_renderer()
-                
 
         if False:    # follow cam
             cam = view_ctl.convert_to_pinhole_camera_parameters()

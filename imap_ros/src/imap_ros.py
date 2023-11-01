@@ -144,13 +144,11 @@ class ROSImplicitMapper:
             open3d_mesh = self.mapper.getMesh()
 
             if (open3d_mesh is not None):
-                print("Mesh available ")
                 pc = open3d.geometry.PointCloud()
                 pc.points = open3d_mesh.vertices
                 pc.colors = open3d_mesh.vertex_colors
                 ros_msg = convertCloudFromOpen3dToRos(pc, frame_id="odom")
                 ros_msg.header.stamp = rospy.Time.now()
-                print("Publishing Reconstruction Data")
                 self.reconstruction_pub.publish(ros_msg)
             else:
                 # print("Mesh not available yet")
@@ -159,8 +157,6 @@ class ROSImplicitMapper:
             rate.sleep()
 
     def cameraCallback(self, rgb_image, depth_image):
-
-        print(f" Got RGBD image {self.image_counter}")
 
         if self.use_tf:
             try:
@@ -206,8 +202,6 @@ class ROSImplicitMapper:
             pose_tensor[0, 3] = self.latest_pose.pose.position.x
             pose_tensor[1, 3] = self.latest_pose.pose.position.y
             pose_tensor[2, 3] = self.latest_pose.pose.position.z
-
-            print(f"Pose: \n {pose_tensor}")
 
             self.publishPoseAsTf(pose_tensor)
 

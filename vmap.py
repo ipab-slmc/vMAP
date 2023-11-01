@@ -34,15 +34,7 @@ def origin_dirs_W(T_WC, dirs_C):
     assert T_WC.shape[1:] == (4, 4)
     assert dirs_C.shape[2] == 3
 
-    print(T_WC.shape)
-    print(dirs_C.shape)
-    print(dirs_C[0])
-    print(T_WC[0])
-    
-
-    dirs_W = (T_WC[:, None, :3, :3] @ dirs_C[..., None])
-    print(dirs_W.shape)
-    dirs_W = dirs_W.squeeze()
+    dirs_W = (T_WC[:, None, :3, :3] @ dirs_C[..., None]).squeeze()
 
     origins = T_WC[:, :3, -1]
 
@@ -316,9 +308,9 @@ class sceneObject:
         bbox3d.color = (255,0,0)
         self.bbox3d = utils.bbox_open3d2bbox(bbox_o3d=bbox3d)
         # self.pc = []
-        # print("obj ", self.obj_id)
-        # print("bound ", bbox3d)
-        # print("kf id dict ", self.kf_id_dict)
+        print("obj ", self.obj_id)
+        print("bound ", bbox3d)
+        print("kf id dict ", self.kf_id_dict)
         # open3d.visualization.draw_geometries([bbox3d, pcs])
         return bbox3d
 
@@ -366,7 +358,6 @@ class sceneObject:
 
         # Get sampled keyframe poses
         sampled_twc = self.t_wc_batch[keyframe_ids[:, 0], :, :]
-
 
         origins, dirs_w = origin_dirs_W(sampled_twc, sampled_ray_dirs)
 
